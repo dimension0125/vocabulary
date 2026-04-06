@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 단어왕: 랜덤 셔플 모드</title>
+    <style>
+        :root { --bg: #121212; --card: #1e1e1e; --primary: #7c4dff; --success: #00c853; --danger: #ff5252; --text: #ffffff; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Pretendard', sans-serif; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+        .game-container { width: 95%; max-width: 500px; background: var(--card); border-radius: 20px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; }
+        .screen { display: none; flex-direction: column; align-items: center; }
+        .screen.active { display: flex; }
+        .stage-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 20px 0; width: 100%; max-height: 300px; overflow-y: auto; }
+        .stage-btn { aspect-ratio: 1; border: none; border-radius: 12px; background: #333; color: #777; font-weight: bold; cursor: not-allowed; transition: 0.2s; }
+        .stage-btn.unlocked { background: var(--primary); color: white; cursor: pointer; }
+        .stage-btn.cleared { background: var(--success); color: white; cursor: pointer; }
+        .target-word { font-size: 28px; font-weight: 800; margin: 20px 0; min-height: 60px; display: flex; align-items: center; justify-content: center; color: var(--primary); }
+        input { width: 100%; padding: 15px; border: 2px solid #444; border-radius: 12px; background: #2a2a2a; color: white; font-size: 18px; text-align: center; outline: none; box-sizing: border-box; }
+        .feedback-msg { margin: 10px 0; font-weight: bold; font-size: 18px; height: 24px; }
+        .error-box { margin-top: 15px; padding: 15px; border-radius: 12px; background: rgba(255, 82, 82, 0.15); border: 1px solid var(--danger); text-align: left; width: 100%; box-sizing: border-box; display: none; }
+        .ex-en { font-style: italic; color: #ff8a80; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        .ex-ko { color: #ccc; font-size: 13px; line-height: 1.4; }
+        .action-btn { width: 100%; padding: 15px; border: none; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 20px; color: white; }
+        .home-link { margin-top: 15px; color: #888; text-decoration: underline; cursor: pointer; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div id="screen-start" class="screen active">
+            <h2>2026 단어왕 👑</h2>
+            <div class="stage-grid" id="stage-grid"></div>
+        </div>
+
+        <div id="screen-quiz" class="screen">
+            <div style="font-size: 13px; color: #888;">STAGE <span id="stg-num"></span> | <span id="wrd-idx"></span>/5</div>
+            <div class="target-word" id="display-word"></div>
+            <input type="text" id="user-input" placeholder="정답 입력" autocomplete="off">
+            <div id="feedback" class="feedback-msg"></div>
+            <div id="error-box" class="error-box">
+                <div style="color: var(--danger); font-weight: bold; margin-bottom: 5px;">❌ 오답! 정답: <span id="correct-ans"></span></div>
+                <div class="ex-en" id="ex-en"></div>
+                <div class="ex-ko" id="ex-ko"></div>
+                <div id="wait-msg" style="margin-top: 10px; font-size: 11px; color: #ffab91;">예문 읽는 중...</div>
+            </div>
+        </div>
+
+        <div id="screen-result" class="screen">
+            <h2 id="res-title"></h2>
+            <p id="res-desc"></p>
+            <button id="res-next-btn" class="action-btn" onclick="nextAction()"></button>
+            <div class="home-link" onclick="goHome()">스테이지 목록으로</div>
+        </div>
+    </div>
+
+    <script>
+        const wordData = [
+            { en: "a wide array of", ko: "다양한", exEn: "The store offers a wide array of electronic accessories for laptops.", exKo: "그 상점은 노트북을 위한 다양한 전자 액세서리를 제공합니다." },
+            { en: "account for", ko: "차지하다", exEn: "Overseas sales account for more than half of the company's total profit.", exKo: "해외 매출이 회사 전체 이익의 절반 이상을 차지합니다." },
+            { en: "acknowledge", ko: "수령을 알리다", exEn: "Please acknowledge receipt of the package by signing the delivery form.", exKo: "배송 양식에 서명하여 물품 수령을 확인해 주시기 바랍니다." },
+            { en: "acquire", ko: "인수하다", exEn: "Our firm plans to acquire a promising startup to expand its market share.", exKo: "저희 회사는 시장 점유율을 확대하기 위해 유망한 스타트업을 인수할 계획입니다." },
+            { en: "adhere to", ko: "~을 준수하다", exEn: "All staff members must adhere to the safety guidelines in the laboratory.", exKo: "모든 직원은 실험실 내 안전 지침을 준수해야 합니다." },
+            { en: "compliance", ko: "준수", exEn: "All employees must work in compliance with the safety standards.", exKo: "모든 직원은 안전 기준을 준수하며 근무해야 합니다." },
+            { en: "comply with", ko: "~을 준수하다", exEn: "The new factory must comply with environmental regulations.", exKo: "신설 공장은 환경 규정을 준수해야 합니다." },
+            { en: "adversely", ko: "부정적으로", exEn: "The technical delay will adversely affect the product launch schedule.", exKo: "기술적인 지연은 제품 출시 일정에 부정적인 영향을 미칠 것입니다." },
+            { en: "advocate", ko: "지지하다", exEn: "Many experts advocate for the use of renewable energy in manufacturing.", exKo: "많은 전문가가 제조 과정에서 재생 에너지 사용을 지지합니다." },
+            { en: "affordable", ko: "가격이 적당한", exEn: "The brand is known for providing high-quality and affordable software.", exKo: "그 브랜드는 고품질의 가격이 적당한 소프트웨어를 제공하는 것으로 유명합니다." },
+            { en: "aggregate", ko: "합계의", exEn: "The aggregate number of subscribers reached one million this month.", exKo: "이번 달에 전체 구독자 수가 100만 명에 도달했습니다." },
+            { en: "alleviate", ko: "완화하다", exEn: "The new administrative policy is designed to alleviate workload stress.", exKo: "새로운 행정 정책은 업무로 인한 스트레스를 완화하기 위해 설계되었습니다." },
+            { en: "mitigate", ko: "완화시키다", exEn: "Regular maintenance can help mitigate the risk of system failures.", exKo: "정기적인 점검은 시스템 고장의 위험을 완화하는 데 도움이 됩니다." },
+            { en: "ambiguous", ko: "모호한", exEn: "The instructions were too ambiguous for the new employees to follow.", exKo: "지시 사항이 너무 모호해서 신입 사원들이 따르기 어려웠습니다." },
+            { en: "ample", ko: "충분한", exEn: "There is ample space in the new warehouse for storing extra inventory.", exKo: "새 창고에는 추가 재고를 보관할 충분한 공간이 있습니다." },
+            { en: "as of late", ko: "최근에", exEn: "As of late, there has been a significant increase in online orders.", exKo: "최근 들어 온라인 주문이 눈에 띄게 증가했습니다." },
+            { en: "assess", ko: "평가하다", exEn: "We need to assess the potential risks before starting the new project.", exKo: "새로운 프로젝트를 시작하기 전에 잠재적인 위험을 평가해야 합니다." },
+            { en: "attest to", ko: "~을 증명하다", exEn: "These positive reviews attest to the reliability of our products.", exKo: "이러한 긍정적인 후기들은 우리 제품의 신뢰성을 증명합니다." },
+            { en: "attribute", ko: "~의 덕분으로 돌리다", exEn: "The manager attributes the team's success to their excellent cooperation.", exKo: "매니저는 팀의 성공을 그들의 뛰어난 협력 덕분으로 돌립니다." },
+            { en: "auspicious", ko: "유망한", exEn: "The high sales figures on the first day were an auspicious sign.", exKo: "첫날의 높은 판매 수치는 유망한 징조였습니다." },
+            { en: "prospective", ko: "유망한", exEn: "The company is interviewing several prospective candidates today.", exKo: "회사는 오늘 몇 명의 유망한 후보자들을 면접하고 있습니다." },
+            { en: "be consistent with", ko: "~와 일치하다", exEn: "The new design must be consistent with the company's brand image.", exKo: "새로운 디자인은 회사의 브랜드 이미지와 일치해야 합니다." },
+            { en: "coincide", ko: "일치하다", exEn: "The workshop will coincide with the annual industry conference.", exKo: "워크숍은 연례 산업 컨퍼런스 일정과 일치할 것입니다." },
+            { en: "be entitled to", ko: "~할 자격이 있다", exEn: "Regular members are entitled to a ten percent discount on all items.", exKo: "정회원은 모든 품목에 대해 10% 할인을 받을 자격이 있습니다." },
+            { en: "eligible", ko: "자격이 있는", exEn: "You will be eligible for health insurance after three months of work.", exKo: "3개월 근무 후에는 건강보험 혜택을 받을 자격이 주어집니다." },
+            { en: "be liable for", ko: "~에 대해 책임이 있다", exEn: "The shipping company will be liable for any damages during transit.", exKo: "운송 회사는 운송 중 발생하는 모든 손해에 대해 책임을 질 것입니다." },
+            { en: "belated", ko: "뒤늦은", exEn: "Please accept our belated apologies for the delay in your shipment.", exKo: "배송 지연에 대해 뒤늦게나마 사과드리니 너그러이 받아주십시오." },
+            { en: "briefly", ko: "잠시", exEn: "The director briefly explained the main goals of the meeting.", exKo: "이사는 회의의 주요 목표를 잠시 설명했습니다." },
+            { en: "broaden", ko: "넓히다", exEn: "We are looking for ways to broaden our presence in the global market.", exKo: "우리는 세계 시장에서 우리의 입지를 넓힐 방법을 찾고 있습니다." },
+            { en: "circumvent", ko: "우회하다", exEn: "The company tried to circumvent the new regulations by changing its policy.", exKo: "그 회사는 정책을 변경하여 새로운 규제를 우회하려 노력했습니다." },
+            { en: "coherent", ko: "일관성 있는", exEn: "The speaker presented a coherent argument for the proposed changes.", exKo: "발표자는 제안된 변경 사항에 대해 일관성 있는 논거를 제시했습니다." },
+            { en: "commence", ko: "시작되다", exEn: "The construction work is scheduled to commence early next month.", exKo: "공사는 다음 달 초에 시작될 예정입니다." },
+            { en: "commitment to", ko: "~에 대한 헌신", exEn: "Our commitment to customer satisfaction has never changed.", exKo: "고객 만족을 향한 우리의 헌신은 결코 변한 적이 없습니다." },
+            { en: "dedicate", ko: "헌신하다", exEn: "We will dedicate more resources to improving our customer support.", exKo: "우리는 고객 지원을 개선하는 데 더 많은 자원을 투입할 것입니다." },
+            { en: "confidential", ko: "기밀의", exEn: "Please ensure that all confidential files are kept in a secure location.", exKo: "모든 기밀 파일은 안전한 장소에 보관되도록 해주십시오." },
+            { en: "conducive", ko: "도움이 되는", exEn: "A quiet environment is conducive to high productivity in the office.", exKo: "조용한 환경은 사무실의 높은 생산성을 유지하는 데 도움이 됩니다." },
+            { en: "contingency plan", ko: "비상 대책", exEn: "We need to develop a contingency plan for possible power outages.", exKo: "정전에 대비한 비상 대책을 마련해야 합니다." },
+            { en: "contrary to", ko: "~와는 반대로", exEn: "Contrary to our expectations, the project was completed early.", exKo: "우리의 예상과는 반대로 프로젝트는 일찍 완료되었습니다." },
+            { en: "curtail", ko: "축소하다", exEn: "The company decided to curtail its spending on advertising this year.", exKo: "회사는 올해 광고 지출을 축소하기로 결정했습니다." },
+            { en: "delegate", ko: "위임하다", exEn: "A good leader knows how to delegate tasks to team members.", exKo: "좋은 리더는 팀원들에게 업무를 위임하는 법을 압니다." },
+            { en: "deplete", ko: "고갈시키다", exEn: "Excessive printing will quickly deplete the remaining paper supply.", exKo: "과도한 인쇄는 남은 종이 공급량을 빠르게 고갈시킬 것입니다." },
+            { en: "designated", ko: "지정된", exEn: "Smoking is only allowed in the designated areas outside the building.", exKo: "흡연은 건물 밖 지정된 구역에서만 가능합니다." },
+            { en: "deterrent", ko: "억제책", exEn: "The new security system acts as a deterrent against unauthorized access.", exKo: "새로운 보안 시스템은 무단 침입에 대한 억제책 역할을 합니다." },
+            { en: "detrimental", ko: "해로운", exEn: "Lack of sleep can be detrimental to your performance at work.", exKo: "수면 부족은 업무 성과에 해로울 수 있습니다." },
+            { en: "devote A to B", ko: "A를 B에 쏟다", exEn: "The team will devote more time to final testing before the release.", exKo: "팀은 출시 전 최종 테스트에 더 많은 시간을 쏟을 것입니다." },
+            { en: "discretion", ko: "재량", exEn: "Bonuses are distributed at the discretion of the department head.", exKo: "보너스는 부서장의 재량에 따라 지급됩니다." },
+            { en: "discretionary", ko: "자유 재량의", exEn: "The manager has a discretionary budget for team-building activities.", exKo: "매니저는 팀 빌딩 활동을 위한 재량 예산을 가지고 있습니다." },
+            { en: "discrepancy", ko: "불일치", exEn: "The accountant found a slight discrepancy in the financial report.", exKo: "회계사는 재무 보고서에서 약간의 불일치를 발견했습니다." },
+            { en: "draw a conclusion", ko: "결론을 도출하다", exEn: "We need more data before we can draw a conclusion from the test.", exKo: "테스트 결과를 토대로 결론을 도출하기 위해서는 더 많은 데이터가 필요합니다." },
+            { en: "efficiently", ko: "효율적으로", exEn: "The new machine is designed to process materials more efficiently.", exKo: "새로운 기계는 재료를 더 효율적으로 처리하도록 설계되었습니다." },
+            { en: "eliminate", ko: "제거하다", exEn: "Our goal is to eliminate unnecessary steps in the production process.", exKo: "우리의 목표는 생산 과정에서 불필요한 단계를 제거하는 것입니다." },
+            { en: "encompass", ko: "포함하다", exEn: "The training program will encompass all aspects of project management.", exKo: "교육 프로그램은 프로젝트 관리의 모든 측면을 포함할 것입니다." },
+            { en: "endorse", ko: "승인하다", exEn: "The board of directors is expected to endorse the new strategy.", exKo: "이사회가 새로운 전략을 승인할 것으로 예상됩니다." },
+            { en: "erroneous", ko: "잘못된", exEn: "The system crashed because it received erroneous data from the server.", exKo: "시스템이 서버로부터 잘못된 데이터를 수신하여 충돌했습니다." },
+            { en: "excursion", ko: "짧은 여행", exEn: "The hotel offers an excursion to the local historical sites.", exKo: "호텔은 지역 유적지로의 짧은 여행 상품을 제공합니다." },
+            { en: "exquisite", ko: "정교한", exEn: "The hotel lobby is decorated with exquisite pieces of modern art.", exKo: "호텔 로비는 정교한 현대 미술품들로 장식되어 있습니다." },
+            { en: "facilitate", ko: "용이하게 하다", exEn: "The new software will facilitate better communication among teams.", exKo: "새로운 소프트웨어는 팀 간의 원활한 소통을 용이하게 할 것입니다." },
+            { en: "familiarize with", ko: "~에 익숙해지다", exEn: "New employees should familiarize themselves with the office rules.", exKo: "신입 사원들은 사무실 규정에 익숙해져야 합니다." },
+            { en: "favorable", ko: "호의적인", exEn: "The new product received favorable reviews from both critics and users.", exKo: "신제품은 비평가와 사용자 모두로부터 호의적인 평가를 받았습니다." },
+            { en: "feasibility", ko: "실현 가능성", exEn: "We are conducting a study to check the feasibility of the plan.", exKo: "우리는 계획의 실현 가능성을 확인하기 위한 조사를 진행 중입니다." },
+            { en: "fluctuate", ko: "변동하다", exEn: "The price of raw materials continues to fluctuate every month.", exKo: "원자재 가격이 매달 계속해서 변동하고 있습니다." },
+            { en: "formidable", ko: "위협적인", exEn: "Our company is facing formidable competition in the global market.", exKo: "우리 회사는 세계 시장에서 위협적인 경쟁에 직면해 있습니다." },
+            { en: "fragile", ko: "깨지기 쉬운", exEn: "Please handle the package with care because the items are fragile.", exKo: "물건이 깨지기 쉬우니 소포를 조심스럽게 다뤄주세요." },
+            { en: "galvanize", ko: "활력을 불어넣다", exEn: "The leader's speech helped galvanize the team to work harder.", exKo: "리더의 연설은 팀이 더 열심히 일하도록 활력을 불어넣는 데 도움이 되었습니다." },
+            { en: "genuine", ko: "진짜의", exEn: "Always use genuine spare parts to maintain your machine's warranty.", exKo: "기계의 보증 기간을 유지하려면 항상 순정 부품을 사용하십시오." },
+            { en: "go into effect", ko: "효력을 발생하다", exEn: "The new smoking ban will go into effect starting next monday.", exKo: "새로운 금연 규정은 다음 주 월요일부터 효력을 발생합니다." },
+            { en: "halt", ko: "중단하다", exEn: "The production was forced to halt due to a sudden power failure.", exKo: "갑작스러운 정전으로 인해 생산이 중단되어야 했습니다." },
+            { en: "haphazard", ko: "무계획적인", exEn: "The files were organized in a haphazard way, making them hard to find.", exKo: "파일들이 무계획적으로 정리되어 있어서 찾기가 어려웠습니다." },
+            { en: "heed", ko: "주의를 기울이다", exEn: "Future investors should heed the warnings about market volatility.", exKo: "미래의 투자자들은 시장 변동성에 대한 경고에 주의를 기울여야 합니다." },
+            { en: "hinder", ko: "방해하다", exEn: "Heavy snow might hinder the delivery of your package this week.", exKo: "이번 주 폭설로 인해 택배 배송이 방해를 받을 수 있습니다." },
+            { en: "hospitality", ko: "환대", exEn: "We were impressed by the warm hospitality of the hotel staff.", exKo: "우리는 호텔 직원들의 따뜻한 환대에 깊은 인상을 받았습니다." },
+            { en: "impeccable", ko: "결점 없는", exEn: "Her impeccable performance made her the top candidate for the job.", exKo: "그녀의 흠잡을 데 없는 성과는 그녀를 그 직무의 적임자로 만들었습니다." },
+            { en: "imperative", ko: "필수적인", exEn: "It is imperative that we finish the project before the deadline.", exKo: "마감일 전에 프로젝트를 마치는 것이 필수적입니다." },
+            { en: "vital", ko: "필수적인", exEn: "Regular exercise is vital for maintaining good health.", exKo: "정기적인 운동은 건강 유지에 필수적입니다." },
+            { en: "impending", ko: "임박한", exEn: "We are all busy preparing for the impending audit next week.", exKo: "우리는 모두 다음 주에 임박한 감사를 준비하느라 바쁩니다." },
+            { en: "imply", ko: "암시하다", exEn: "The low price does not imply that the product is of poor quality.", exKo: "가격이 낮다고 해서 제품의 품질이 떨어진다는 것을 의미하지는 않습니다." },
+            { en: "in accordance with", ko: "~에 부합하여", exEn: "All products are manufactured in accordance with safety laws.", exKo: "모든 제품은 안전 법규에 부합하여 제조됩니다." },
+            { en: "in conjunction with", ko: "~와 협력하여", exEn: "We are working in conjunction with a local marketing agency.", exKo: "우리는 지역 마케팅 대행사와 협력하여 일하고 있습니다." },
+            { en: "in light of", ko: "~을 고려하여", exEn: "In light of the recent complaints, we have improved our services.", exKo: "최근의 불만 사항들을 고려하여, 서비스를 개선했습니다." },
+            { en: "under consideration", ko: "고려 중인", exEn: "Several new projects are currently under consideration.", exKo: "현재 몇 가지 새로운 프로젝트가 고려 중입니다." },
+            { en: "in the event of", ko: "~의 경우에", exEn: "In the event of an emergency, please use the stairs to exit.", exKo: "비상시에는 계단을 이용하여 대피해 주십시오." },
+            { en: "incentive", ko: "장려책", exEn: "The company offers a cash incentive to employees who meet their goals.", exKo: "회사는 목표를 달성한 직원들에게 현금 장려책을 제공합니다." },
+            { en: "incur", ko: "발생시키다", exEn: "Late payments will incur an additional fee of ten dollars.", exKo: "연체 시 10달러의 추가 비용이 발생합니다." },
+            { en: "inherent", ko: "내재된", exEn: "There are inherent risks in investing in any new business venture.", exKo: "어떤 새로운 사업에 투자하든 내재된 위험이 따르기 마련입니다." },
+            { en: "itinerary", ko: "여행 일정표", exEn: "Please check the itinerary for the exact time of the guided tour.", exKo: "가이드 투어의 정확한 시간은 여행 일정표를 확인해 주세요." },
+            { en: "jointly", ko: "공동으로", exEn: "The two companies will jointly develop a new mobile application.", exKo: "두 회사는 새로운 모바일 애플리케이션을 공동으로 개발할 것입니다." },
+            { en: "judicious", ko: "현명한", exEn: "The company made a judicious decision to save money for future use.", exKo: "회사는 미래를 대비해 자금을 아끼는 현명한 결정을 내렸습니다." },
+            { en: "keen", ko: "열망하는", exEn: "She is keen to learn new skills to improve her career prospects.", exKo: "그녀는 경력 전망을 높이기 위해 새로운 기술을 배우기를 열망합니다." },
+            { en: "keep in mind", ko: "명심하다", exEn: "Please keep in mind that the office will be closed on Friday.", exKo: "금요일에는 사무실이 문을 닫는다는 점을 명심하십시오." },
+            { en: "keep track of", ko: "~을 파악하다", exEn: "This app helps you keep track of your daily expenses easily.", exKo: "이 앱은 일일 지출 내역을 쉽게 파악할 수 있도록 도와줍니다." },
+            { en: "keep up with", ko: "~을 따라잡다", exEn: "It is important to keep up with the latest trends in the industry.", exKo: "업계의 최신 트렌드를 따라잡는 것이 중요합니다." },
+            { en: "legible", ko: "읽기 쉬운", exEn: "Your signature on the form must be clear and legible.", exKo: "양식에 기입하는 서명은 명확하고 읽기 쉬워야 합니다." },
+            { en: "leverage", ko: "활용하다", exEn: "We can leverage our strong brand name to enter new markets.", exKo: "우리는 강력한 브랜드 인지도를 활용하여 새로운 시장에 진출할 수 있습니다." },
+            { en: "take advantage of", ko: "~을 활용하다", exEn: "You should take advantage of the free training sessions.", exKo: "무료 교육 세션들을 잘 활용하시기 바랍니다." },
+            { en: "utilize", ko: "활용하다", exEn: "We should utilize all available resources to finish the job.", exKo: "업무를 마치기 위해 가용한 모든 자원을 활용해야 합니다." },
+            { en: "liaise", ko: "연락하다", exEn: "My job is to liaise with clients to ensure their needs are met.", exKo: "제 업무는 고객의 니즈가 충족되도록 고객들과 연락을 취하는 것입니다." },
+            { en: "lucid", ko: "명료한", exEn: "The manager gave a lucid explanation of the new company policy.", exKo: "매니저는 새로운 회사 정책에 대해 명료하게 설명해 주었습니다." },
+            { en: "lucrative", ko: "수익성이 좋은", exEn: "The partnership proved to be a lucrative business move for both.", exKo: "파트너십은 양사 모두에게 수익성이 좋은 사업적 행보였음이 증명되었습니다." },
+            { en: "mandatory", ko: "의무적인", exEn: "Attendance at the safety orientation is mandatory for all staff.", exKo: "모든 직원은 안전 교육에 의무적으로 참석해야 합니다." },
+            { en: "manifest", ko: "나타내다", exEn: "The symptoms of the problem began to manifest after the update.", exKo: "업데이트 이후 문제의 증상들이 나타나기 시작했습니다." },
+            { en: "moderate", ko: "적당한", exEn: "The technician suggested keeping the machine at a moderate speed.", exKo: "기술자는 기계를 적당한 속도로 유지할 것을 제안했습니다." },
+            { en: "modification", ko: "수정", exEn: "The client requested a minor modification to the contract terms.", exKo: "고객이 계약 조건의 약간의 수정을 요청했습니다." },
+            { en: "noteworthy", ko: "주목할 만한", exEn: "The increase in sales is a noteworthy achievement for our team.", exKo: "매출 증가는 우리 팀에게 주목할 만한 성과입니다." },
+            { en: "notify", ko: "통지하다", exEn: "Please notify the manager if you are unable to attend the meeting.", exKo: "회의에 참석할 수 없다면 매니저에게 통지해 주십시오." },
+            { en: "obsolete", ko: "구식의", exEn: "New technology has made the old manufacturing process obsolete.", exKo: "새로운 기술로 인해 기존의 제조 공정은 구식이 되었습니다." },
+            { en: "on behalf of", ko: "~을 대신하여", exEn: "I am writing this email on behalf of the marketing director.", exKo: "마케팅 이사를 대신하여 이 이메일을 작성합니다." },
+            { en: "on short notice", ko: "갑작스럽게", exEn: "Thank you for attending the emergency meeting on short notice.", exKo: "갑작스러운 통보에도 비상 회의에 참석해 주셔서 감사합니다." },
+            { en: "optimize", ko: "최적화하다", exEn: "We are looking for ways to optimize our energy consumption.", exKo: "우리는 에너지 소비를 최적화할 방법을 찾고 있습니다." },
+            { en: "overhaul", ko: "점검하다", exEn: "The company plans to overhaul its entire computer network system.", exKo: "회사는 컴퓨터 네트워크 시스템 전체를 점검하고 개편할 계획입니다." },
+            { en: "oversee", ko: "감독하다", exEn: "A senior manager was appointed to oversee the new project.", exKo: "새로운 프로젝트를 감독하기 위해 수석 매니저가 임명되었습니다." },
+            { en: "pave", ko: "(길을) 닦다", exEn: "This discovery will pave the way for new medical treatments.", exKo: "이 발견은 새로운 의학적 치료를 위한 길을 닦아줄 것입니다." },
+            { en: "pending", ko: "미결의", exEn: "The transaction is still pending approval from the head office.", exKo: "해당 거래는 아직 본사의 승인을 기다리는 중입니다." },
+            { en: "perpetual", ko: "영구적인", exEn: "The company was granted perpetual access to the database.", exKo: "그 회사는 데이터베이스에 대한 영구적인 접근 권한을 부여받았습니다." },
+            { en: "point of contact", ko: "연락 담당자", exEn: "She is the main point of contact for all customer inquiries.", exKo: "그녀는 모든 고객 문의에 대한 주요 연락 담당자입니다." },
+            { en: "precarious", ko: "불안정한", exEn: "The company is in a precarious financial position at the moment.", exKo: "그 회사는 현재 불안정한 재무 상태에 처해 있습니다." },
+            { en: "precaution", ko: "예방 조치", exEn: "Wearing a helmet is a necessary precaution on the construction site.", exKo: "공사 현장에서 헬멧을 착용하는 것은 필수적인 예방 조치입니다." },
+            { en: "preliminary", ko: "예비의", exEn: "The preliminary results of the survey will be released tomorrow.", exKo: "설문조사의 예비 결과가 내일 발표될 예정입니다." },
+            { en: "prerequisite", ko: "전제 조건", exEn: "Basic computer skills are a prerequisite for this office job.", exKo: "기본적인 컴퓨터 기술은 이 사무직 업무의 전제 조건입니다." },
+            { en: "prior to", ko: "~보다 앞서", exEn: "All documents must be signed prior to the start of the meeting.", exKo: "회의 시작에 앞서 모든 문서에 서명이 완료되어야 합니다." },
+            { en: "promptly", ko: "즉시", exEn: "Please respond promptly to the client's urgent request.", exKo: "고객의 긴급한 요청에 즉시 응답해 주십시오." },
+            { en: "prosperous", ko: "번영하는", exEn: "Our goal is to build a prosperous future for all our employees.", exKo: "우리의 목표는 모든 직원을 위한 번영하는 미래를 건설하는 것입니다." },
+            { en: "provisional estimate", ko: "임시 견적", exEn: "We can provide a provisional estimate for the repair costs.", exKo: "수리 비용에 대한 임시 견적을 제공해 드릴 수 있습니다." },
+            { en: "reimburse", ko: "환급하다", exEn: "The company will reimburse you for your travel expenses.", exKo: "회사는 귀하의 여행 경비를 환급해 줄 것입니다." },
+            { en: "refrain from", ko: "~을 자제하다", exEn: "Please refrain from taking photos during the presentation.", exKo: "발표 중에는 사진 촬영을 자제해 주시기 바랍니다." },
+            { en: "reluctant", ko: "꺼리는", exEn: "Some members were reluctant to accept the new changes.", exKo: "일부 위원들은 새로운 변화를 받아들이기를 꺼렸습니다." },
+            { en: "resilient", ko: "회복력 있는", exEn: "The economy has proven to be resilient despite the challenges.", exKo: "어려움에도 불구하고 경제는 회복력이 있음이 증명되었습니다." },
+            { en: "retrieve", ko: "검색하다", exEn: "It is easy to retrieve your lost password from the website.", exKo: "웹사이트에서 잃어버린 비밀번호를 검색하는 것은 쉽습니다." },
+            { en: "scrupulous", ko: "꼼꼼한", exEn: "The accountant is very scrupulous about keeping accurate records.", exKo: "그 회계사는 정확한 기록을 유지하는 데 매우 꼼꼼합니다." },
+            { en: "scrutinize", ko: "면밀히 조사하다", exEn: "Experts will scrutinize the data to ensure there are no errors.", exKo: "전문가들은 오류가 없는지 확인하기 위해 데이터를 면밀히 조사할 것입니다." },
+            { en: "stagnant", ko: "정체된", exEn: "Sales have remained stagnant for the last three months.", exKo: "지난 3개월 동안 매출이 정체된 상태를 유지하고 있습니다." },
+            { en: "stem from", ko: "~에서 기인하다", exEn: "Most of the technical problems stem from old hardware.", exKo: "대부분의 기술적 문제는 오래된 하드웨어에서 기인합니다." },
+            { en: "stipulate", ko: "규정하다", exEn: "The contract will stipulate the exact date of the delivery.", exKo: "계약서는 정확한 인도 날짜를 규정할 것입니다." },
+            { en: "stringent", ko: "엄격한", exEn: "The facility must follow stringent safety regulations at all times.", exKo: "해당 시설은 항상 엄격한 안전 규정을 따라야 합니다." },
+            { en: "sturdy", ko: "튼튼한", exEn: "Our new laptop models are protected by a sturdy aluminum casing.", exKo: "우리의 새로운 노트북 모델들은 튼튼한 알루미늄 외장으로 보호됩니다." },
+            { en: "subsequent", ko: "차후의", exEn: "Subsequent events proved that our initial plan was correct.", exKo: "이후의 사건들은 우리의 초기 계획이 맞았음을 증명했습니다." },
+            { en: "take precedence", ko: "우선권을 갖다", exEn: "Quality control should take precedence over speed in production.", exKo: "생산에 있어 품질 관리가 속도보다 우선시되어야 합니다." },
+            { en: "tedious", ko: "지루한", exEn: "Data entry can be a tedious task if done for a long time.", exKo: "데이터 입력은 오래 하면 지루한 작업이 될 수 있습니다." },
+            { en: "temporarily", ko: "일시적으로", exEn: "The website will be temporarily unavailable due to maintenance.", exKo: "점검으로 인해 웹사이트를 일시적으로 이용할 수 없습니다." },
+            { en: "tentatively", ko: "잠정적으로", exEn: "The next meeting is tentatively scheduled for next Friday.", exKo: "다음 회의는 잠정적으로 다음 주 금요일로 예정되어 있습니다." },
+            { en: "terminate", ko: "종료하다", exEn: "The company decided to terminate the contract early.", exKo: "회사는 계약을 조기 종료하기로 결정했습니다." },
+            { en: "unanimous", ko: "만장일치의", exEn: "The committee reached a unanimous decision on the new budget.", exKo: "위원회는 새로운 예산안에 대해 만장일치로 결정을 내렸습니다." },
+            { en: "unprecedented", ko: "전례 없는", exEn: "The company saw unprecedented growth in sales this year.", exKo: "회사는 올해 매출에서 전례 없는 성장을 기록했습니다." },
+            { en: "unravel", ko: "해결하다", exEn: "The team worked hard to unravel the complex technical issue.", exKo: "팀은 복잡한 기술적 문제를 해결하기 위해 열심히 일했습니다." },
+            { en: "validity", ko: "유효성", exEn: "Please confirm the validity of your license before it expires.", exKo: "면허가 만료되기 전에 유효성을 확인해 주십시오." },
+            { en: "verify", ko: "확인하다", exEn: "The system will verify your identity using a security code.", exKo: "시스템이 보안 코드를 사용하여 귀하의 신원을 확인합니다." },
+            { en: "versatile", ko: "다재다능한", exEn: "This versatile tool can be used for many different tasks.", exKo: "이 다재다능한 도구는 여러 가지 다양한 작업에 사용될 수 있습니다." },
+            { en: "vigilant", ko: "경계하는", exEn: "We must remain vigilant against any possible security threats.", exKo: "우리는 가능한 보안 위협에 대해 항상 경계해야 합니다." },
+            { en: "volatile", ko: "변동이 심한", exEn: "The stock market has been very volatile over the past month.", exKo: "지난 한 달 동안 주식 시장의 변동성이 매우 심했습니다." },
+            { en: "withstand", ko: "견디다", exEn: "The new building is designed to withstand strong winds.", exKo: "새 건물은 강풍을 견딜 수 있도록 설계되었습니다." },
+            { en: "yield", ko: "산출하다", exEn: "The new marketing strategy is starting to yield good results.", exKo: "새로운 마케팅 전략이 좋은 결과를 산출하기 시작했습니다." }
+        ];
+
+        let unlocked = 1, cleared = new Set(), currentStg = 0, idx = 0, score = 0;
+        let isErrorMode = false, canProceed = false, activeScreen = 'start';
+        let currentShuffledWords = []; // 현재 섞인 단어 목록
+
+        // 섞기 알고리즘 (Fisher-Yates Shuffle)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (activeScreen === 'quiz') {
+                    if (isErrorMode) { if (canProceed) { idx++; nextWord(); } }
+                    else { checkAns(); }
+                } else if (activeScreen === 'result') { nextAction(); }
+            }
+        });
+
+        function renderStages() {
+            const grid = document.getElementById('stage-grid');
+            grid.innerHTML = '';
+            for (let i = 1; i <= 30; i++) {
+                const btn = document.createElement('button');
+                btn.className = `stage-btn ${cleared.has(i) ? 'cleared' : (i <= unlocked ? 'unlocked' : '')}`;
+                btn.innerText = i;
+                if (i <= unlocked) btn.onclick = () => startStage(i);
+                grid.appendChild(btn);
+            }
+        }
+
+        function startStage(num) {
+            currentStg = num; idx = 0; score = 0; isErrorMode = false;
+            // 해당 스테이지 단어 5개 복사 후 셔플
+            const originalWords = wordData.slice((num - 1) * 5, (num - 1) * 5 + 5);
+            currentShuffledWords = shuffle([...originalWords]); 
+            
+            showScreen('quiz');
+            document.getElementById('stg-num').innerText = num;
+            nextWord();
+        }
+
+        function nextWord() {
+            if (idx >= 5) { showResult(); return; }
+            isErrorMode = false; canProceed = false;
+            const word = currentShuffledWords[idx]; // 섞인 배열에서 가져옴
+            document.getElementById('display-word').innerText = word.en;
+            document.getElementById('wrd-idx').innerText = idx + 1;
+            const input = document.getElementById('user-input');
+            input.value = ''; input.readOnly = false;
+            document.getElementById('feedback').innerText = '';
+            document.getElementById('error-box').style.display = 'none';
+            input.focus();
+        }
+
+        function checkAns() {
+            const input = document.getElementById('user-input');
+            const word = currentShuffledWords[idx];
+            const userVal = input.value.trim().toLowerCase();
+            const correct = word.ko.toLowerCase().replace('~', '').trim();
+
+            if (userVal === correct || userVal === word.ko.toLowerCase()) {
+                score++;
+                document.getElementById('feedback').innerText = "✅ 정답!";
+                document.getElementById('feedback').style.color = "var(--success)";
+                input.readOnly = true;
+                setTimeout(() => { idx++; nextWord(); }, 600);
+            } else {
+                isErrorMode = true; input.readOnly = true;
+                document.getElementById('error-box').style.display = 'block';
+                document.getElementById('correct-ans').innerText = word.ko;
+                document.getElementById('ex-en').innerText = word.exEn;
+                document.getElementById('ex-ko').innerText = "해석: " + word.exKo;
+                setTimeout(() => { 
+                    canProceed = true; 
+                    document.getElementById('wait-msg').innerText = "[엔터] 눌러서 다음 단어";
+                    document.getElementById('wait-msg').style.color = "#00c853";
+                }, 1000);
+            }
+        }
+
+        function showResult() {
+            showScreen('result');
+            const nextBtn = document.getElementById('res-next-btn');
+            if (score === 5) {
+                document.getElementById('res-title').innerText = "STAGE CLEAR! 🎉";
+                document.getElementById('res-title').style.color = "var(--success)";
+                document.getElementById('res-desc').innerText = "완벽하게 외우셨네요!";
+                nextBtn.innerText = "다음 스테이지 시작 (Enter)";
+                nextBtn.style.background = "var(--success)";
+                cleared.add(currentStg);
+                if (currentStg === unlocked && unlocked < 30) unlocked++;
+            } else {
+                document.getElementById('res-title').innerText = "FAILED ⛈️";
+                document.getElementById('res-title').style.color = "var(--danger)";
+                document.getElementById('res-desc').innerText = "순서가 바뀌어도 맞힐 수 있어야 진짜 실력!";
+                nextBtn.innerText = "다시 도전하기 (Enter)";
+                nextBtn.style.background = "var(--primary)";
+            }
+        }
+
+        function nextAction() {
+            if (score === 5) {
+                if (currentStg < 30) startStage(currentStg + 1);
+                else goHome();
+            } else {
+                startStage(currentStg);
+            }
+        }
+
+        function showScreen(type) {
+            activeScreen = type;
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('screen-' + type).classList.add('active');
+        }
+
+        function goHome() { renderStages(); showScreen('start'); }
+        renderStages();
+    </script>
+</body>
+</html>
