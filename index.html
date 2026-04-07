@@ -229,14 +229,33 @@
         });
 
         function speak(text) {
-            // 이전 음성이 재생 중이면 중단
-            window.speechSynthesis.cancel();
+            window.speechSynthesis.cancel(); // 이전 음성 중단
             
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US'; // 미국식 영어 설정
-            utterance.rate = 0.9;     // 속도 (0.1 ~ 10, 살짝 느리게 설정)
+            
+            // 브라우저에서 사용 가능한 목소리 목록 가져오기
+            const voices = window.speechSynthesis.getVoices();
+            
+            // 영어를 사용하는 목소리 중 'Google'이 들어간 자연스러운 목소리 찾기
+            // 만약 없으면 그냥 첫 번째 영어 목소리 선택
+            const preferredVoice = voices.find(v => v.lang.includes('en') && v.name.includes('Google')) 
+                                   || voices.find(v => v.lang.includes('en'));
+            
+            if (preferredVoice) {
+                utterance.voice = preferredVoice;
+            }
+        
+            utterance.lang = 'en-US'; 
+            utterance.rate = 0.9; // 속도를 0.9 정도로 하면 좀 더 사람 같습니다.
+            utterance.pitch = 1.0; // 음높이 (너무 높으면 닭 소리처럼 들리니 1.0 유지)
+            
             window.speechSynthesis.speak(utterance);
         }
+        
+        // 크롬에서 목소리 목록을 비동기로 로드하기 때문에 필요한 코드
+        window.speechSynthesis.onvoiceschanged = () => {
+            window.speechSynthesis.getVoices();
+        };
 
         function renderStages() {
             const grid = document.getElementById('stage-grid');
